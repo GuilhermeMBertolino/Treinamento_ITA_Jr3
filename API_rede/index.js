@@ -5,6 +5,8 @@ const fs = require("fs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 
+const databaseService = require("./mongoConnection.js");
+
 const JWTpassword = "borarede";
 
 app.use(cors());
@@ -22,7 +24,7 @@ const auth = (req, res, next) =>
         jwt.verify(token, JWTpassword, (err, data) =>
         {
             if(err)
-                res.sendStatus(401);
+                res.sendStatus(402);
             else
             {
                 req.token = token;
@@ -35,15 +37,13 @@ const auth = (req, res, next) =>
         res.sendStatus(401);
 }
 
-let DB = JSON.parse(fs.readFileSync("Banco.json"));
-
-app.post("/auth", auth, (req, res) =>
+app.post("/auth", async (req, res) =>
 {
     let {nome, senha} = req.body;
 
     if(nome != undefined)
     {
-        let usuario = DB.usuarios.find(u => u.nome == nome);
+        let usuario = await (await databaseService.getUsers()).find(u => u.nome === nome);
 
         if(usuario != undefined)
         {
@@ -77,75 +77,48 @@ app.post("/auth", auth, (req, res) =>
         res.sendStatus(400);
 });
 
-app.get("/usuarios", auth, (req, res) =>
+app.get("/usuarios", auth, async (req, res) =>
 {
+    let users = await databaseService.getUsers();
+
     res.statusCode = 200;
-    res.json(DB.usuarios);
+    res.send(users);
 });
 
-app.get("/usuario/:id", auth, (req, res) =>
+app.get("/usuario/:nome", auth, async (req, res) =>
 {
-    if(isNaN(req.params.id))
+    let nome = req.params.nome
+    
+    if(nome)
     {
+        let user = await databaseService.getUser(nome);
+        if(user[0])
+        {
+            res.statusCode = 200;
+            res.send(user);
+        }
+        else
+            res.sendStatus(404);
+    }
+    else
         res.sendStatus(400);
-    }
-    else
-    {
-        let id = parseInt(req.params.id);
-        let usuario = DB.usuarios.find(u => u.id === id);
-        if(usuario !== undefined)
-        {
-            res.statusCode = 200;
-            res.json(usuario);
-        }
-        else
-        {
-            res.sendStatus(404);
-        }
-    }
 });
 
-app.get("/tarefas", auth, (req, res) =>
+app.get("/tarefas", auth, async (req, res) =>
 {
+    let tasks = await databaseService.getTasks();
+
     res.statusCode = 200;
-    res.send(DB.tarefas);
+    res.send(tasks);
 });
 
-app.get("/tarefa/:id", auth, (req, res) =>
+app.post("/usuario", async (req, res) =>
 {
-    if(isNaN(req.params.id))
-    {
-        res.sendStatus(400); 
-    }
-    else
-    {
-        let id = parseInt(req.params.id);
-        let tarefa = DB.tarefas.find(u => u.id === id);
-        if(tarefa !== undefined)
-        {
-            res.statusCode = 200;
-            res.json(tarefa);
-        }
-        else
-        {
-            res.sendStatus(404);
-        }
-    }
-});
+    let {nome, senha, turma, cargo} = req.body;
 
-app.post("/usuario", auth, (req, res) =>
-{
-    let {id, nome, senha, turma, cargo} = req.body;
-
-    if(id && nome && senha && turma && cargo)
+    if(nome && senha && turma && cargo)
     {
-        DB.usuarios.push({
-            id,
-            nome,
-            senha,
-            turma,
-            cargo
-        });
+        await databaseService.createUser(nome, senha, turma, cargo);
         res.sendStatus(200);
     }
     else
@@ -154,18 +127,13 @@ app.post("/usuario", auth, (req, res) =>
     }
 });
 
-app.post("/tarefa", auth, (req, res) =>
+app.post("/tarefa", async (req, res) =>
 {
-    let {id, descricao, responsavel} = req.body;
+    let {nome, descricao, responsavel} = req.body;
 
-    if(id && descricao && responsavel)
+    if(nome && descricao && responsavel)
     {
-        DB.tarefas.push(
-        {
-            id,
-            descricao,
-            responsavel
-        });
+        await databaseService.createTask(nome, descricao, responsavel);
         res.sendStatus(200);
     }
     else
@@ -174,100 +142,29 @@ app.post("/tarefa", auth, (req, res) =>
     }
 });
 
-app.delete("/usuario/:id", auth, (req, res) =>
+app.delete("/usuario/:nome", auth, async (req, res) =>
 {
-    if(isNaN(req.params.id))
-    {
-        res.sendStatus(400);
-    }
-    else
-    {
-        let id = parseInt(req.params.id);
-        let usuario = DB.usuarios.findIndex(u => u.id === id);
-        if(usuario !== -1)
-        {
-            DB.usuarios.splice(usuario, 1);
-            res.sendStatus(200);
-        }
-        else
-        {
-            res.sendStatus(404);
-        }
-    }
+    let nome = req.params.nome;
+    
+    await databaseService.deleteUser(nome);
+    res.sendStatus(200);
 });
 
-app.delete("/tarefa/:id", auth, (req, res) =>
+app.delete("/tarefa/:nome", auth, async (req, res) =>
 {
-    if(isNaN(req.params.id))
-    {
-        res.sendStatus(400);
-    }
-    else
-    {
-        let id = parseInt(req.params.id);
-        let tarefa = DB.tarefas.findIndex(u => u.id === id);
-        if(tarefa !== -1)
-        {
-            DB.tarefas.splice(tarefa, 1);
-            res.sendStatus(200);
-        }
-        else
-        {
-            res.sendStatus(404);
-        }
-    }
+    let nome = req.params.nome;
+
+    await databaseService.deleteTask(nome);
+    res.sendStatus(200);
 });
 
-app.put("/usuario/:id", auth, (req, res) =>
+app.put("/usuario/:nome", auth, async (req, res) =>
 {
-    if(isNaN(req.params.id))
-    {
-        res.sendStatus(400);
-    }
-    else
-    {
-        let id = parseInt(req.params.id);
-        let usuario = DB.usuarios.find(u => u.id === id);
-        if(usuario !== undefined)
-        {
-            let {nome, senha, turma, cargo} = req.body;
+    let nome = req.params.nome;
+    let {nNome, nSenha, nTurma, nCargo} = req.body;
 
-            usuario.nome = nome || usuario.nome;
-            usuario.senha = senha || usuario.senha;
-            usuario.turma = turma || usuario.turma;
-            usuario.cargo = cargo || usuario.cargo;
-            res.sendStatus(200);
-        }
-        else
-        {
-            res.sendStatus(404);
-        }
-    }
-});
-
-app.put("/tarefa/:id", auth, (req, res) =>
-{
-    if(isNaN(req.params.id))
-    {
-        res.sendStatus(400);
-    }
-    else
-    {
-        let id = parseInt(req.params.id);
-        let tarefa = DB.tarefas.find(u => u.id === id);
-        if(tarefa !== undefined)
-        {
-            let {descricao, responsavel} = req.body;
-
-            tarefa.descricao = descricao || tarefa.descricao;
-            tarefa.responsavel = responsavel || tarefa.responsavel;
-            res.sendStatus(200);
-        }
-        else
-        {
-            res.sendStatus(404);
-        }
-    }
+    await databaseService.updateUser(nome, nNome, nSenha, nTurma, nCargo);
+    res.sendStatus(200);
 });
 
 app.listen(4000, () =>
